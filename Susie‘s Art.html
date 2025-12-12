@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="Keywords" content="3D画廊">
+    <meta name="Description" content="一个交互式3D照片画廊，可以360度旋转浏览图片">
+    <title>王昱紫的画廊</title>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: radial-gradient(circle at 50% 0%, #f5f5fa 0%, #cfd2e1 55%, #a4a7b8 100%);
+            font-family: 'Arial', sans-serif;
+            overflow: hidden;
+            user-select: none;
+            color: #333;
+        }
+
+        /* 颗粒质感背景 */
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            background: url('https://www.transparenttextures.com/patterns/asfalt-light.png');
+            opacity: 0.12;
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        /* 高级质感 Header 样式 */
+        .header {
+            position: absolute;
+            top: 30px; /* 微调间距更透气 */
+            width: 100%;
+            text-align: center;
+            z-index: 10;
+            padding: 0 20px;
+            box-sizing: border-box;
+            font-family: "Montserrat", "Noto Serif SC", serif; /* 英文无衬线+中文衬线，高级感拉满 */
+            pointer-events: none; /* 不遮挡下方交互 */
+        }
+
+        /* 主标题样式 */
+        .header h1 {
+            font-size: 2.8rem;
+            font-weight: 400; /* 轻量级字体更优雅，避免粗体的廉价感 */
+            color: #2a2a2a; /* 低饱和深灰，替代纯黑更柔和 */
+            letter-spacing: 0.05em; /* 字间距拉开，更舒展 */
+            margin-bottom: 12px;
+            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.08); /* 轻量投影，增加层次感 */
+            background: linear-gradient(120deg, #2a2a2a, #555555); /* 渐变文字，低调高级 */
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            transition: all 0.4s ease;
+        }
+
+        /* 副标题样式 */
+        .header p {
+            font-size: 1rem;
+            color: #666666; /* 浅灰，避免与主标题抢视觉 */
+            letter-spacing: 0.1em; /* 加大字间距，提升精致感 */
+            line-height: 1.6;
+            text-transform: lowercase; /* 英文小写更柔和（如果用英文文案） */
+            text-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+            background: linear-gradient(120deg, #555555, #777777);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+
+        /* 照片数量高亮 */
+        .header #photoCount {
+            font-weight: 500;
+            color: #444444;
+            padding: 0 4px;
+            border-bottom: 1px solid #888888; /* 轻量下划线，突出数字又不突兀 */
+        }
+
+        /* 响应式适配（大屏更舒展，小屏更紧凑） */
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 2.2rem;
+            }
+            .header p {
+                font-size: 0.9rem;
+                letter-spacing: 0.08em;
+            }
+        }
+
+        /* 可选：添加载入动效 */
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .header h1, .header p {
+            animation: fadeInUp 0.8s ease-out forwards;
+        }
+        .header p {
+            animation-delay: 0.3s;
+            opacity: 0;
+        }
+
+        /* 环境光（顶部渐晕 + 氛围光） */
+        .ambient-light {
+            position: fixed;
+            top: -10%;
+            left: 50%;
+            width: 1200px;
+            height: 1200px;
+            transform: translateX(-50%);
+            background: radial-gradient(circle, rgba(255,255,255,0.6), rgba(255,255,255,0) 70%);
+            filter: blur(120px);
+            z-index: -3;
+            pointer-events: none;
+        }
+
+        /* 3D 透视容器 */
+        .perspective {
+            perspective: 1600px;
+            width: 100%;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* 立体舞台（地台）- 居中并向下调整 */
+        .stage {
+            position: absolute;
+            width: 900px;
+            height: 900px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(255,255,255,0.7), rgba(180,180,200,0.3), rgba(100,100,120,0.1));
+            box-shadow:
+                0 40px 120px rgba(0,0,0,0.35),
+                inset 0 0 80px rgba(255,255,255,0.3),
+                inset 0 -50px 80px rgba(150,150,180,0.3);
+
+            bottom: -320px;
+            transform: rotateX(80deg) translateX(-50%);
+            left: 50%;
+            z-index: -2;
+        }
+
+        /* 3D照片容器 - 缩小尺寸 */
+        .wrap {
+            width: 220px;
+            height: 300px;
+            position: relative;
+            transform-style: preserve-3d;
+            transform: rotateX(-15deg);
+            transition: transform 0.4s ease-out;
+        }
+
+        /* ========== 照片 + 黑白高级相框效果 ========== */
+        .wrap img {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            object-fit: cover;
+            cursor: pointer;
+            transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275),
+                        box-shadow 0.4s,
+                        border-color 0.3s;
+
+            border: none;
+            box-shadow: none;
+            border-radius: 4px;
+
+            /* 多层黑白高级相框效果 */
+            background:
+                /* 最外层：黑白哑光金属光泽 */
+                linear-gradient(135deg,
+                    rgba(240, 240, 240, 0.9) 0%,
+                    rgba(220, 220, 220, 0.85) 25%,
+                    rgba(180, 180, 180, 0.8) 50%,
+                    rgba(80, 80, 80, 0.85) 75%,
+                    rgba(50, 50, 50, 0.9) 100%),
+
+                /* 第二层：黑白磨砂纹理 */
+                url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><defs><radialGradient id="g"><stop offset="0%" stop-color="rgba(255,255,255,0.1)"/><stop offset="100%" stop-color="rgba(0,0,0,0)"/></radialGradient></defs><rect width="100%" height="100%" fill="rgba(150,150,150,0.1)"/><circle cx="50" cy="50" r="30" fill="url(%23g)"/><circle cx="150" cy="150" r="40" fill="url(%23g)"/></svg>'),
+
+                /* 第三层：内阴影效果 */
+                linear-gradient(135deg,
+                    transparent 8px,    /* 原10px → 8px，适配小尺寸 */
+                    rgba(0,0,0,0.15) 8px,
+                    rgba(0,0,0,0.15) 10px,
+                    transparent 10px,
+                    transparent 100%);
+
+            background-size: 100% 100%, 80px 80px, 100% 100%; /* 纹理缩小适配 */
+            background-repeat: no-repeat, repeat, no-repeat;
+
+            /* 内边距，形成相框效果 - 适配小尺寸 */
+            padding: 10px;  /* 原14px → 10px */
+
+            /* 黑白质感阴影 - 适配小尺寸 */
+            box-shadow:
+                0 8px 25px rgba(0, 0, 0, 0.35),   /* 原12px → 8px */
+                0 4px 10px rgba(0, 0, 0, 0.25),   /* 原6px → 4px */
+                inset 0 2px 6px rgba(255, 255, 255, 0.7),
+                inset 0 -2px 6px rgba(0, 0, 0, 0.3),
+                inset 2px 2px 8px rgba(255, 255, 255, 0.5),
+                inset -2px -2px 8px rgba(0, 0, 0, 0.4);
+
+            /* 优雅的过渡效果 */
+            animation: subtleGrayGlow 3s ease-in-out infinite alternate;
+        }
+
+        /* 照片内容区域（实际图片） */
+        .wrap img::after {
+            content: "";
+            position: absolute;
+            top: 10px;    /* 原14px → 10px */
+            left: 10px;   /* 原14px → 10px */
+            right: 10px;  /* 原14px → 10px */
+            bottom: 10px; /* 原14px → 10px */
+            background: var(--img-bg) center/cover;
+            border-radius: 2px;
+            box-shadow:
+                inset 0 0 15px rgba(0, 0, 0, 0.2),
+                0 0 1px rgba(255, 255, 255, 0.3);
+            z-index: 1;
+        }
+
+        /* 黑白相框hover/点击效果 - 合并为同一个样式 */
+        .wrap img:hover,
+        .wrap img.active {
+            transform: scale(1.1) !important; /* 原1.12 → 1.1，避免放大过度 */
+
+            /* hover/点击时增强黑白哑光光泽 */
+            background:
+                linear-gradient(135deg,
+                    rgba(255, 255, 255, 0.95) 0%,
+                    rgba(230, 230, 230, 0.9) 25%,
+                    rgba(200, 200, 200, 0.85) 50%,
+                    rgba(100, 100, 100, 0.9) 75%,
+                    rgba(70, 70, 70, 0.95) 100%),
+                url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><defs><radialGradient id="g"><stop offset="0%" stop-color="rgba(255,255,255,0.2)"/><stop offset="100%" stop-color="rgba(0,0,0,0)"/></radialGradient></defs><rect width="100%" height="100%" fill="rgba(180,180,180,0.2)"/><circle cx="50" cy="50" r="30" fill="url(%23g)"/><circle cx="150" cy="150" r="40" fill="url(%23g)"/></svg>'),
+                linear-gradient(135deg,
+                    transparent 8px,
+                    rgba(255, 255, 255, 0.2) 8px,
+                    rgba(255, 255, 255, 0.2) 10px,
+                    transparent 10px,
+                    transparent 100%);
+
+            background-size: 100% 100%, 80px 80px, 100% 100%;
+            background-repeat: no-repeat, repeat, no-repeat;
+
+            /* 加强黑白阴影和高光 - 适配小尺寸 */
+            box-shadow:
+                0 12px 35px rgba(0, 0, 0, 0.45),
+                0 6px 15px rgba(0, 0, 0, 0.35),
+                inset 0 2px 8px rgba(255, 255, 255, 0.9),
+                inset 0 -2px 8px rgba(0, 0, 0, 0.5),
+                inset 2px 2px 10px rgba(255, 255, 255, 0.6),
+                inset -2px -2px 10px rgba(0, 0, 0, 0.5);
+
+            /* 黑白光晕效果 */
+            filter: drop-shadow(0 0 6px rgba(220, 220, 220, 0.7)); /* 原8px → 6px */
+
+            /* 加强呼吸效果 */
+            animation: grayPulse 1.5s ease-in-out infinite alternate;
+        }
+
+        /* 微妙的黑白呼吸动画 - 适配小尺寸 */
+        @keyframes subtleGrayGlow {
+            0% {
+                box-shadow:
+                    0 8px 25px rgba(0, 0, 0, 0.35),
+                    0 4px 10px rgba(0, 0, 0, 0.25),
+                    inset 0 2px 6px rgba(255, 255, 255, 0.7),
+                    inset 0 -2px 6px rgba(0, 0, 0, 0.3),
+                    inset 2px 2px 8px rgba(255, 255, 255, 0.5),
+                    inset -2px -2px 8px rgba(0, 0, 0, 0.4);
+            }
+            100% {
+                box-shadow:
+                    0 8px 30px rgba(0, 0, 0, 0.4),
+                    0 4px 12px rgba(0, 0, 0, 0.3),
+                    inset 0 2px 6px rgba(255, 255, 255, 0.8),
+                    inset 0 -2px 6px rgba(0, 0, 0, 0.35),
+                    inset 2px 2px 8px rgba(255, 255, 255, 0.6),
+                    inset -2px -2px 8px rgba(0, 0, 0, 0.45);
+            }
+        }
+
+        /* 悬停/点击时的黑白脉动动画 - 适配小尺寸 */
+        @keyframes grayPulse {
+            0% {
+                filter: drop-shadow(0 0 6px rgba(220, 220, 220, 0.7));
+                box-shadow:
+                    0 12px 35px rgba(0, 0, 0, 0.45),
+                    0 6px 15px rgba(0, 0, 0, 0.35),
+                    inset 0 2px 8px rgba(255, 255, 255, 0.9),
+                    inset 0 -2px 8px rgba(0, 0, 0, 0.5),
+                    inset 2px 2px 10px rgba(255, 255, 255, 0.6),
+                    inset -2px -2px 10px rgba(0, 0, 0, 0.5);
+            }
+            100% {
+                filter: drop-shadow(0 0 10px rgba(240, 240, 240, 0.9)); /* 原15px → 10px */
+                box-shadow:
+                    0 15px 45px rgba(0, 0, 0, 0.55),
+                    0 8px 20px rgba(0, 0, 0, 0.45),
+                    inset 0 2px 10px rgba(255, 255, 255, 0.95),
+                    inset 0 -2px 10px rgba(0, 0, 0, 0.6),
+                    inset 2px 2px 12px rgba(255, 255, 255, 0.7),
+                    inset -2px -2px 12px rgba(0, 0, 0, 0.6);
+            }
+        }
+
+        /* 控制按钮 */
+        .controls {
+            position: absolute;
+            bottom: 30px;
+            width: 100%;
+            text-align: center;
+            z-index: 10;
+        }
+
+        .control-buttons {
+            margin-top: 10px;
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+        }
+
+        .control-btn {
+            padding: 10px 22px;
+            background: rgba(255,255,255,0.25);
+            border-radius: 30px;
+            border: none;
+            color: #444;
+            cursor: pointer;
+            backdrop-filter: blur(10px);
+            font-size: 1rem;
+            transition: 0.3s;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+
+        .control-btn:hover {
+            background: rgba(255,255,255,0.45);
+            color: #222;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+        }
+    </style>
+</head>
+
+<body>
+    <!-- 氛围光 -->
+    <div class="ambient-light"></div>
+
+    <!-- 立体舞台 -->
+    <div class="stage"></div>
+
+    <div class="header">
+        <h1>Susie's Fine Art Gallery</h1>
+        <p>揽影旋观 · 缩放入境 · 轻触生辉 | 共 <span id="photoCount">0</span> 件</p>
+    </div>
+
+    <div class="perspective">
+        <div class="wrap" id="imgwrap"></div>
+    </div>
+
+    <div class="controls">
+        <div class="control-buttons">
+            <button class="control-btn" id="autoRotateBtn">停止旋转</button>
+            <button class="control-btn" id="resetViewBtn">重置视角</button>
+        </div>
+    </div>
+
+    <script>
+        /* ========== 图片路径 ========== */
+        const imagePaths = [
+            "http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEDxQc1t4A23HD2OWs5aJVrSAIT6Lv5xFjXnWcVK0ntl7RHU9Hc1qYN.5H2qE9jjJ4koBeajAAwPnVnnD0pOn4aU!/b&bo=OAShBTgEoQUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEKubl483k6IDeGjmUIjFti.WtmQGKvtKf6f397PKyo.olh6fJOm*CpAc1HzsLUl21Lzy3gwqf3wXjwvGDeuY4hc!/b&bo=VwQABVcEAAUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEDxQc1t4A23HD2OWs5aJVrSeeX1mQ3.B78mU1wzX033c3Hm4FArspw6T3Jrna88tN0pIjPBSjbMMz.8MdlPCrtA!/b&bo=OASsBTgErAUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEDxQc1t4A23HD2OWs5aJVrSZz.U66V0qUGNl23tPsGqT1Bl3nZ7OTuGZsKAxTTYdm1s1tDn3hjysLXd2pwJPClU!/b&bo=OASgBTgEoAUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEDxQc1t4A23HD2OWs5aJVrQErJrNMi50MLtmIUhkAC.hfbK6kXIdXqrkqz8Oz9gXFWoI7US*G62arnHTZhGDRRw!/b&bo=OASgBTgEoAUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEAI7BECrUjmMQC*g29JKvOpaVHAmr4q3L6fe.*3OjztCMcF1Gc.FWGlcneSh3eAjaVY3zmZDtAS9t01zG6MUnmg!/b&bo=OASgBTgEoAUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEAI7BECrUjmMQC*g29JKvOoOOboFI2QdD1D.GpoMLBrYAGRbPKKoij*7b7QBLlxoe8lDRm1SME0uQChHewYqZgM!/b&bo=OASgBTgEoAUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEAI7BECrUjmMQC*g29JKvOqko8DKKuBUrMeCha7yrGa*SjvAJF3vtQVmjFxKaiWWLlf9mAmThUzOvGFG4C6eAVg!/b&bo=OASgBTgEoAUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEAI7BECrUjmMQC*g29JKvOorPkjox8yTlamv4DBxXRMna0Ntw16Tz0P361oMVyrSQcZ95FMpanRk8WFxbIpMKZI!/b&bo=OASuBTgErgUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrECY6A2clvHPttulYIjaFirfhcc0BvAoJmX8Lumejx6XtXbg.IR05MXmyeZAHugItOspqt*Q4CS8ESmi2HffXENI!/b&bo=OASgBTgEoAUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrECY6A2clvHPttulYIjaFird5C15Jcv6es4fOc6PkjtwFuRsUoUNrKQcpFA9j55MMRQuk3HG4uSNeQ9FjUAhlCTg!/b&bo=OAQ2BTgENgUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrECY6A2clvHPttulYIjaFireF8lJcimlJD25D8dOMMMriMq09AntWqEjemp*QdeAXQ31J.vEfAdOD6BhFg16DVuQ!/b&bo=OASgBTgEoAUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrECY6A2clvHPttulYIjaFireOpmuka9pL4ILhgAd0.q3pTsKhyuqnmiiruWqWZf6TVdNcOx*wUMt7S0FCevIqdlE!/b&bo=OASgBTgEoAUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEMBkBTqJnDmjGskaJLRVYIYHtPs3m3BDeLHPRWqRpq8Uggtfljf7Av80*8jocKvh*4E*nWkEDi9oZ*6SIq5GcnY!/b&bo=OASgBTgEoAUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEMBkBTqJnDmjGskaJLRVYIagsGf.I*4GFQu9NNG8WikEw7ISD.ZgRsd0*sj.3TPyictdE77gan9O601W1bQ9RI0!/b&bo=OASgBTgEoAUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEMBkBTqJnDmjGskaJLRVYIa7vYRtnksh6SBteUYMoVNIF8uCMvGj8O889vXUVo0eO3Ahj0eqtCYn7X9PzSBZvXs!/b&bo=OASgBTgEoAUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEMBkBTqJnDmjGskaJLRVYIYcviW8DuGc3HA1GeIEFn*54.HYVjTD7m6rnNJ2Fjd1N2iMQ4BSBpoV6Ijp3taae70!/b&bo=OASgBTgEoAUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrENQg8dIlm72w7qWR9zuUquYLm*Fy9lFSCelb.CleYJOwFlhZYy47xOW7zayBLQOVF0ChEHyocIYF8OK*QFd6Agg!/b&bo=OASgBTgEoAUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrENQg8dIlm72w7qWR9zuUquYabWJ0P741AEi6dimPbvsTFMZb4EpM1HTGKX4wWjyXkpTY2w*3nzCLz9qdtKRSJPY!/b&bo=OASGBjgEhgYBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrENQg8dIlm72w7qWR9zuUquYn1qyYNcdz2xpgQ7FhyLK4nW77SpJTZ.C3ZRAO9w0Pm2sBKWkXF3HMqpuQ4kG1S6M!/b&bo=OARVBjgEVQYBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrENQg8dIlm72w7qWR9zuUquap5r7ATi4MIBzOomddWgRdiUNlwOsZ1I2ooZX38snVJlMdSeoxLps8r1Iy267G0Y4!/b&bo=OARCBjgEQgYBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrELxMtpeg714cWzASouWFqvqWtQ*NPKqArt913kT.NaZypey7E7c*nHfk*i6j3JlzuHZo2GtXvJZa5rp7KFi3Gno!/b&bo=OARUBjgEVAYBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrELxMtpeg714cWzASouWFqvrDEi9r1i6.onmkfJ3kZGMZEGoKX6CbLUhAmd5t4oJ2g**S*kAWHnK1dt0Kfs9qPT8!/b&bo=OAShBTgEoQUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrELxMtpeg714cWzASouWFqvrtNcqqOdel9fhH*xUnsNsBEyv6S5jhGDxoPaE7Ss7v6vNgQ0rdOCKG.wH6XNyybMQ!/b&bo=OAShBTgEoQUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrELxMtpeg714cWzASouWFqvpJi1wBRl0aPxnSg.2EON5VyEBeU1.5SjkdPi0cRGY1Q20ahclYm9jS*fnBDVot1.0!/b&bo=OASgBTgEoAUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEFp8vgFtqVmoZulRlsK*6ywfPTTBnErjtC*Cm4tFL**Aej4fCrEyGL4zDFeuMnlLfdxkFy.qNFrcyxuH2exvjzE!/b&bo=OASeBTgEngUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEFp8vgFtqVmoZulRlsK*6yyAqMhix5inB*4F.e*HsL0jlWvuhhj4Tt7jb5xQpovg8Asff8UB9vkHeb*1mEpQAro!/b&bo=OASgBTgEoAUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEFp8vgFtqVmoZulRlsK*6yzUvGi*cYg3w1BNXlSYhMJ6M4rY8j06LrLPUtkumM0vJRZojKBFQSxyRDqhA92LH0c!/b&bo=OAShBTgEoQUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEFp8vgFtqVmoZulRlsK*6yw6Qn0WgfV4tdGLMD3n0MMHb1WaSS25hFw5enYIr9VojYpJeyJpLrrPWtJMi1MD8Y4!/b&bo=OAS3BTgEtwUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEHJb.I4aO25wHPoi7gBDr2.Lik*O89vJBDXDxvXiQEYp.R17av2uiETmXfqUGK.xNMriwy2lMTUSFMjBs8n.rGQ!/b&bo=OASgBTgEoAUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEHJb.I4aO25wHPoi7gBDr2.KsVEW3L3Kqu4zv476Uhlywq7GuXSZ80qVQLRTue2bXtQ7xUquWqvZ0OEz4t6HzuU!/b&bo=OASgBTgEoAUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEHJb.I4aO25wHPoi7gBDr29VBsOX9.uaXmwJ2fdNBwNKG8acreVsDa7seLIdnulK7gWe07E8LdNOyIQQ9kpwoZM!/b&bo=OASgBTgEoAUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEHJb.I4aO25wHPoi7gBDr2.K8*f*eec1NJwpG1qp1wihLC9nZ5D.Dxkb7nS8jam.S9CvRVwUZuPoe4OQpAfOWUc!/b&bo=OASgBTgEoAUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEMsnrVIopU4m04G*N3eAfkZcIP2SHw24*GfbnwXXA9T4km5hWZqNxyoP.Auf6iX8h8Yx.3F2Law1Wz9jb7Bx3b8!/b&bo=oAU4BKAFOAQBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEMsnrVIopU4m04G*N3eAfkaYpyxIOVU*eGuaKdg5hKfwPLK5U9McvEycKtvIIG8yQ*gv1n5uH2*wlWfTxuo.p0g!/b&bo=OASgBTgEoAUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEMsnrVIopU4m04G*N3eAfkZq.Ko.egcYzWFaIqfn2oUCMU1xsfPZ2MBrTNvzYxzG0uMdenR.H19vjJwkmeZi6Vw!/b&bo=OASgBTgEoAUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEMsnrVIopU4m04G*N3eAfkaWQztRKO9OPSi4OGQx05S8E5tiCsldUi6nV73OlS5yQ8zMpMp2JDfnnHuIr*LZB2w!/b&bo=OASgBTgEoAUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEOJuTEXIZktd7NlTxiPYAOf1GpFHkkZmvp1Yy4peoE4shlokg*akJoirV*LFUBoXweuy4q6Y*6hZRbxtZdeAi*M!/b&bo=OASgBTgEoAUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEOJuTEXIZktd7NlTxiPYAOduhPV5ZxJ.1wpjYQKpCq1TgVqBxoTafL4wcY2XoH4fFAFwJANrTQLMTQHFJF3J71s!/b&bo=OASgBTgEoAUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEOJuTEXIZktd7NlTxiPYAOeCvao4LerhX3vyKHuAbd2ACGuCNsfi.smGg3Mz0aB6.bRaUCx7cc2RYcJLIfkvIJM!/b&bo=OgSsBToErAUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEOJuTEXIZktd7NlTxiPYAOeMp75Tj7d2WrnDYUD6bCSqnnHENbU2pq9Soz5eSdjUJYwrpwLj3PjnW*afgf28K3s!/b&bo=OARUBjgEVAYBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEATtgvM0Y1qQXZvXhRUpm.Oh*Aj75NQeMtE4z1y5afeKN4U4*6s0ZlKoCscJe*49RLHtOrktVCorJ0oejJE48HE!/b&bo=OASaBjgEmgYBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEATtgvM0Y1qQXZvXhRUpm.NL7I1t61w4dTKjQnlhFF9am9ISz*G19M9wCZeMoCD8lghBDIDtR.K8.rR7X9dsilw!/b&bo=OATLBTgEywUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEATtgvM0Y1qQXZvXhRUpm.PgcfAIrP36nejpC.mZB5UeVNKRufJlKBMCIFU72ji4l0I9sDSsfJkph2*gNJMnsYA!/b&bo=OARUBjgEVAYBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEATtgvM0Y1qQXZvXhRUpm.OXP5KN1BeO5K*9Sk4m7NZZ0GeyDsZlUm*uY4.LlNDXmGodIe1HieAntMRp*EXbV*g!/b&bo=OARUBjgEVAYBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEATtgvM0Y1qQXZvXhRUpm.OXP5KN1BeO5K*9Sk4m7NZZ0GeyDsZlUm*uY4.LlNDXmGodIe1HieAntMRp*EXbV*g!/b&bo=OARUBjgEVAYBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEAYDu6mOq3ij8nrB8JZDFJzd2zcDb.gBMnP*l6jpQQSPd5AyckNh*u5hbkr4MN35O0QMNzJVjzBJECEQxp9X9EA!/b&bo=OASgBTgEoAUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEAYDu6mOq3ij8nrB8JZDFJyoCn8e*eKsgFzw25APs77LUYpnELmFHPhnTUziNrtWZvyOSx2NNNMAbDR8Z5xkDCA!/b&bo=OAS5BTgEuQUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEAYDu6mOq3ij8nrB8JZDFJx8MUCd2.kAhdba4Ixj4RbFGToGWFLlnlZB4irvaUNTMk4FSQLNs71SLk1KxylBsDg!/b&bo=NASWBTQElgUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEAYDu6mOq3ij8nrB8JZDFJzhmRJFt83AIrGke8UwG3G6vWA5hcGTbjakFJHV7qv3bknSwyv*HHrUvS4JUHLx59I!/b&bo=hgRNBoYETQYBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEI0BRMAI5yPLRzaRS78S4fnk1xRrPOZ3*J.U02NcAGWs5Nqagh.dnGsKa0g4qLLR*ek**SHRgbddCuxy*k9lpvQ!/b&bo=OATxBTgE8QUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEI0BRMAI5yPLRzaRS78S4fnJYroPXHEw2DPBMbBi7Je0Apby0yflpZBheV7HEyVXjTLP9BjAqjTXXkzBmqUUUuA!/b&bo=OARTBjgEUwYBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEI0BRMAI5yPLRzaRS78S4fki7wsevAjoVc59ddt8SUfF6Uzaq5HdvZcXuMr0F590TAgSeXaq9DLeGX15somNW0s!/b&bo=OASgBTgEoAUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEI0BRMAI5yPLRzaRS78S4fljkjI1aKrbJ0HhUlqDojO*OMnWj.59BBMTR60FmLEachwwEXNmzQS854gYko5bNW4!/b&bo=OASgBTgEoAUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEHuIFdfQj*OvwDZ6NdV.fhM1eS9GSAWv5*cjFaTqSf03hf2dQhq5KdLjONfkWtD7CISsZ8ro.1vzEgrfRE36jco!/b&bo=OARZBTgEWQUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEHuIFdfQj*OvwDZ6NdV.fhPKdWCqgNyXouLa3A4qxc.J9Gm9kagp1QeL9Vtn5v8kZ1vJ5LwRvG3NDLzoo2wHc6Y!/b&bo=QAZVCEAGVQgBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEHuIFdfQj*OvwDZ6NdV.fhNh5xtJF79Bkfa3RucClE20haZY.o8MnNv2vuRnYkOTQnbFu5UftXi.YinvI8A8Hvs!/b&bo=QAZUCEAGVAgBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEHuIFdfQj*OvwDZ6NdV.fhMVDG0DC8AC6UTWDwg45BzgGkrWAlLcBG0NOpdlc6RuXSvvWXQD8KgCN0HqcmDy9HI!/b&bo=sARABkAGVQgBB8k!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEOj7FitWmL88h4gXS5WDLCTDWEzM24TGfr1HTx3a6ErQU0BNcj9V9WvNuoif9og48JXPRejva*aaJq09fRxfkPU!/b&bo=QAZcCEAGXAgBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEOj7FitWmL88h4gXS5WDLCSothvXyJM5zfOb8t73*bIvBHeWxhmTuCc1a0UP8mtFpS5ixBVXhMnBsR2IImr09HU!/b&bo=QAZgCUAGYAkBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEOj7FitWmL88h4gXS5WDLCSlEYvVc2LTCfSmZc29MbjjL37MbHFI7X17EBKOEJcfESeu*QFZ2teq6nKpb*8OHyY!/b&bo=QAZVCEAGVQgBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEOj7FitWmL88h4gXS5WDLCQyNVXVlw3KgPm5OeO1ldXfRHLdqzS9g7zKQ5UWWuRV5zC0W0kvM7HJpB8iwcYbWo4!/b&bo=QAZVCEAGVQgBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEG2R*5tAJHXTicXEkdOgjgSSiA*YL3IaC4iofkpUMfdO8w*Y3N8O5iasnPIAunq7bIyBJmq87VKIGQtlzZ.wEEA!/b&bo=QAZfCUAGXwkBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEG2R*5tAJHXTicXEkdOgjgRMccRr2NZQ1auIVJAG5d2Y6CevUoohfe5E2C962ftvAfGCL.0NxcinHC5FmXlljmc!/b&bo=QAZVCEAGVQgBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEG2R*5tAJHXTicXEkdOgjgRL0XY1Rs.DYavBC9lxTxi5NIbdzCwCXnfYSap7TzrcYjI8*0FDFM2x*k66tGZ3VJA!/b&bo=sARABkAGVQgDB8s!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEG2R*5tAJHXTicXEkdOgjgRXrpD.iwM1ClWN7mp4QgziTNtiAZyijzXkxEjsEKsQRM.DHgqylFbutv8xhfyOoGs!/b&bo=QAbWCEAG1ggBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrED*GLRJBA98O3dBdqmbSrdxxotFGzTdmZG9aJlcnmopfOFEkh6favD.X9yfr.wLEYSSgF2VW8X1b8b0nOsmkxkg!/b&bo=QAZVCEAGVQgBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrED*GLRJBA98O3dBdqmbSrdz49kA66f7rkX5uMqqhXS8JrMuecaWH5PI*LfRji.*vh8Odf3RyXqmnacc6ZJ0Xe5Q!/b&bo=QAZVCEAGVQgBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrED*GLRJBA98O3dBdqmbSrdz95vtqKlY6niPZwSoqfdwjhglng.VxFOyy8dh78yINCLYVljEtpCsnII9vRc1W7Fo!/b&bo=OASgBTgEoAUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrED*GLRJBA98O3dBdqmbSrdy7jQvpFEA0oJzbIBgvrHtCQpsu5uTB3tUCOo7x8dzGN7M*qiw025RXGMb8wrWsh9M!/b&bo=QAZfCUAGXwkBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEECRrQCe5VrEQDPh7IT3qX3XAOoL2mt6Q6yABfDYbWKWVVLCV0E98SuFPswBUsDXHAqFs0x.TsmX8.mvQ1uwvas!/b&bo=OARVBjgEVQYBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEECRrQCe5VrEQDPh7IT3qX2bvyOFjK5IOAD.HVxE8K2.RUUXaZ1qia7zJaHJe1GbIT*jMb85A93eo6id.q9CjdU!/b&bo=zQZABs0GQAYBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEECRrQCe5VrEQDPh7IT3qX1FE9RGGU1MFeN.0s2xnzfObhqek7itSb3LCjOgnMrxlurR0LtX.8*2q91.tePzwNo!/b&bo=QAbpB0AG6QcBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEECRrQCe5VrEQDPh7IT3qX2IO6I1ptaT6c6HBl9fj7U4Rem.aUwNW5damS9PsllLhxXaPs7AgpkS1MAMpFjE24Y!/b&bo=QAYaCEAGGggBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEPTdXHplJPHTyXhWT9UXe5D0.uLkNFBmQz4DyPiTx95fumi5r4o8VQIcbmkQYRkCH4LQ7FDT.xuUPVsa*BlGIM8!/b&bo=OASgBTgEoAUBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEPTdXHplJPHTyXhWT9UXe5BSh16k8lLiN53IOQQ.xUk8g*wy43PzL*CJEEQox0J7YLHOYFqFiftqEeZubnq6uLM!/b&bo=oAWAB6AFgAcBByA!&rf=viewer_4",
+"http://photogzmaz.photo.store.qq.com/psc?/V50lyljs2klOUW0SoVAk3LsNiK49evDa/TmEUgtj9EK6.7V8ajmQrEPTdXHplJPHTyXhWT9UXe5DoUv8STG7R5ZD.EOye.kykq9gxX.utumQ*nSDzAeu4zdIKqbLE5Ly7BgJGvDbsDCQ!/b&bo=LwTrAi8E6wIBByA!&rf=viewer_4"
+        ];
+
+        // 显示图片总数
+        document.getElementById("photoCount").textContent = imagePaths.length;
+
+        const wrap = document.getElementById("imgwrap");
+
+        let rotX = -15, rotY = 0, scale = 1;
+        let isAutoRotating = true;
+        let rotateTimer = null;
+        let activeImage = null; // 记录当前激活的图片
+
+        /* ========== 初始化画廊 ========== */
+        function initGallery() {
+            wrap.innerHTML = "";
+
+            const total = imagePaths.length;
+            const perLayer = Math.floor(total / 3);
+
+            // 调整每层的半径，适配小尺寸照片（原1300/1600/1900 → 1000/1300/1600）
+            createLayer(0, perLayer, 0, 1000);
+            createLayer(perLayer, perLayer, 280, 1300); // offsetY 原380 → 280
+            createLayer(perLayer * 2, total - perLayer * 2, 560, 1600); // offsetY 原760 → 560
+
+            initMouseControl();
+            initWheelControl();
+
+            startAutoRotate();
+        }
+
+        /* ========== 创建每一层照片环 ========== */
+        function createLayer(start, count, offsetY, radius) {
+            const deg = 360 / count;
+
+            for (let i = 0; i < count; i++) {
+                const index = start + i;
+                const src = imagePaths[index];
+
+                const img = document.createElement("img");
+                img.src = src;
+                img.dataset.index = index;
+                img.alt = `照片 ${index + 1}`;
+
+                // 点击事件：添加/移除active类（和hover效果一致）
+                img.onclick = function() {
+                    // 如果点击的是当前激活的图片，取消激活
+                    if (activeImage === this) {
+                        this.classList.remove("active");
+                        activeImage = null;
+                    } else {
+                        // 取消之前激活的图片
+                        if (activeImage) {
+                            activeImage.classList.remove("active");
+                        }
+                        // 激活当前图片
+                        this.classList.add("active");
+                        activeImage = this;
+                    }
+                };
+
+                // 鼠标离开时，如果不是点击激活的，取消hover效果（可选）
+                img.onmouseleave = function() {
+                    if (activeImage !== this) {
+                        this.classList.remove("active");
+                    }
+                };
+
+                wrap.appendChild(img);
+
+                setTimeout(() => {
+                    img.style.transform =
+                        `rotateY(${deg * i}deg) translateZ(${radius}px) translateY(${offsetY}px)`;
+                    img.style.transition = `1s ${(count - i) * 0.03}s`;
+                }, 50);
+            }
+        }
+
+        /* ========== 鼠标拖拽旋转 ========== */
+        function initMouseControl() {
+            let dragging = false, lastX = 0, lastY = 0;
+
+            document.onmousedown = (e) => {
+                // 点击空白处取消激活的图片
+                if (!e.target.closest('.wrap img')) {
+                    if (activeImage) {
+                        activeImage.classList.remove("active");
+                        activeImage = null;
+                    }
+                }
+
+                dragging = true;
+                lastX = e.clientX;
+                lastY = e.clientY;
+                wrap.style.cursor = 'grabbing';
+            };
+
+            document.onmousemove = (e) => {
+                if (!dragging) return;
+
+                rotY += (e.clientX - lastX) * 0.2;
+                rotX -= (e.clientY - lastY) * 0.1;
+
+                updateTransform();
+
+                lastX = e.clientX;
+                lastY = e.clientY;
+            };
+
+            document.onmouseup = () => {
+                dragging = false;
+                wrap.style.cursor = '';
+            };
+        }
+
+        /* ========== 滚轮缩放 ========== */
+        function initWheelControl() {
+            document.addEventListener("wheel", (e) => {
+                e.preventDefault();
+
+                if (e.deltaY < 0) scale = Math.min(2, scale + 0.08);
+                else scale = Math.max(0.45, scale - 0.08);
+
+                updateTransform();
+            }, { passive: false });
+        }
+
+        /* ========== 更新整体 transform ========== */
+        function updateTransform() {
+            wrap.style.transform = `rotateX(${rotX}deg) rotateY(${rotY}deg) scale(${scale})`;
+        }
+
+        /* ========== 自动旋转（启动）- 速度减慢 ========== */
+        function startAutoRotate() {
+            clearInterval(rotateTimer);
+            rotateTimer = setInterval(() => {
+                // 旋转速度从0.4减少到0.2
+                rotY += 0.1;
+                updateTransform();
+            }, 30);
+
+            isAutoRotating = true;
+            document.getElementById("autoRotateBtn").textContent = "停止旋转";
+        }
+
+        /* ========== 自动旋转按钮 ========== */
+        document.getElementById("autoRotateBtn").onclick = () => {
+            if (isAutoRotating) {
+                clearInterval(rotateTimer);
+                document.getElementById("autoRotateBtn").textContent = "自动旋转";
+            } else {
+                startAutoRotate();
+            }
+            isAutoRotating = !isAutoRotating;
+        };
+
+        /* ========== 重置视角 ========== */
+        document.getElementById("resetViewBtn").onclick = () => {
+            rotX = -15;
+            rotY = 0;
+            scale = 1;
+            updateTransform();
+
+            // 重置时取消激活的图片
+            if (activeImage) {
+                activeImage.classList.remove("active");
+                activeImage = null;
+            }
+        };
+
+        window.onload = initGallery;
+    </script>
+</body>
+</html>
